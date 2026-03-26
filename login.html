@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Tracker Login</title>
+<style>
+
+body{
+  margin:0;
+  height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:#f4f6f9;
+  font-family:'Segoe UI', Arial;
+}
+
+.container{
+  background:white;
+  padding:35px 30px;
+  border-radius:16px;
+  width:340px;
+  box-shadow:0 15px 35px rgba(0,0,0,0.15);
+  text-align:center;
+}
+
+h2{
+  margin-bottom:20px;
+}
+
+input{
+  width:100%;
+  padding:12px;
+  margin:10px 0;
+  border:1px solid #ccc;
+  border-radius:8px;
+  outline:none;
+  font-size:14px;
+  box-sizing:border-box; /* 🔥 IMPORTANT */
+}
+
+input:focus{
+  border-color:#4caf50;
+  box-shadow:0 0 5px rgba(76,175,80,0.3);
+}
+
+button{
+  width:100%;
+  padding:14px;
+  margin-top:20px;
+  border:none;
+  border-radius:10px;
+  background:#4caf50;
+  color:white;
+  font-size:16px;
+  font-weight:bold;
+  cursor:pointer;
+  transition:0.2s;
+}
+
+button:hover{
+  background:#43a047;
+}
+
+button:active{
+  transform:scale(0.97);
+}
+
+
+#status{
+  margin-top:15px;
+  color:#f44336;
+  font-weight:bold;
+}
+
+
+.password-wrapper{
+  position:relative;
+  width:100%;
+}
+
+.password-wrapper input{
+  width:100%;
+  padding-right:40px;
+}
+
+#togglePassword{
+  position:absolute;
+  right:12px;
+  top:50%;
+  transform:translateY(-50%);
+  cursor:pointer;
+  font-size:18px;
+  color:#666;
+}
+
+#togglePassword:hover{
+  color:#000;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h2>Worker Login</h2>
+
+<input id="email" placeholder="Email address">
+<div class="password-wrapper">
+  <input id="password" type="password" placeholder="Password">
+  <span id="togglePassword">👁</span>
+</div>
+
+<button id="loginBtn">Login</button>
+
+<p id="status" style="color:red; font-weight:bold;"></p>
+
+<script src="login.js"></script>
+
+</div>
+</body>
+</html>

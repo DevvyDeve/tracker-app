@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Work Tracker</title>
+
+<style>
+
+html, body{
+  height:100%;
+  margin:0;
+  overflow:hidden;
+}
+
+body{
+  font-family: 'Segoe UI', Arial;
+  background:#f4f6f9;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+.container{
+  background:white;
+  padding:30px;
+  border-radius:16px;
+  width:380px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.15);
+  text-align:center;
+}
+
+h1{
+  margin-bottom:10px;
+}
+
+.info{
+  margin:6px 0;
+  font-size:14px;
+  color:#666;
+}
+
+#timer{
+  font-size:42px;
+  margin:20px 0;
+  font-weight:bold;
+  letter-spacing:2px;
+}
+
+.bar{
+  width:100%;
+  height:18px;
+  background:#eee;
+  border-radius:20px;
+  overflow:hidden;
+  margin-bottom:15px;
+}
+
+.fill{
+  height:100%;
+  width:0%;
+  background:linear-gradient(90deg,#4caf50,#81c784);
+  transition: width 0.5s ease;
+}
+
+button{
+  padding:12px 15px;
+  margin:5px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:bold;
+  transition:0.2s;
+}
+
+button:hover{
+  transform:scale(1.05);
+}
+
+button:active{
+  transform:scale(0.85);
+}
+
+.start{ background:#4caf50; color:white; }
+.pause{ background:#ff9800; color:white; }
+.end{ background:#f44336; color:white; }
+.logout{ background:#555; color:white; }
+
+</style>
+
+</head>
+
+<body>
+    <div class="container">
+
+<h1>Work Tracker</h1>
+<div id="user" class="info">User: -</div>
+<div id="status" class="info">Status: ACTIVE</div>
+<div id="timer">00:00:00</div>
+<div class="info">Activity</div>
+<div class="bar"><div id="activityBar" class="fill"></div></div>
+<div class="info">Productivity</div>
+<div class="bar"><div id="productivityBar" class="fill"></div></div>
+<div id="productivityText">0%</div>
+<div id="app" class="info">App: -</div>
+<button id="toggleBtn" class="start" onclick="toggleWork()">Start</button>
+<button class="end" onclick="endWork()">End Session</button>
+
+<script>
+const ipc = window.api;
+let currentUser = null;
+let screenshotTimeout;
+let timer;
+let seconds = parseInt(localStorage.getItem("seconds")) || 0;
+let tracking = false;
+
+function format(n){
+  return n.toString().padStart(2,"0");
+}
+
+function randomScreenshot(){
+
+  if(!tracking) return;
+
+  let min = 7000; 
+  let max = 12000;
+
+  let time = Math.floor(Math.random() * (max - min)) + min;
+
+  screenshotTimeout = setTimeout(()=>{
+
+    ipc.send("take-screenshot");
+    randomScreenshot();
+
+  },time);
+
+}
+
+function toggleWork(){
+
+  const btn = document.getElementById("toggleBtn");
+
+  if(!tracking){
+
+    tracking = true;
+    btn.innerText = "Pause";
+
+    timer = setInterval(()=>{
+
+      seconds++;
+      localStorage.setItem("seconds", seconds);
+
+      let hrs = Math.floor(seconds/3600);
+      let mins = Math.floor((seconds%3600)/60);
+      let secs = seconds%60;
+
+      document.getElementById("timer").innerText =
+      `${format(hrs)}:${format(mins)}:${format(secs)}`;
+
+    },1000);
+
+    randomScreenshot();
+
+  }else{
+
+    tracking = false;
+    btn.innerText = "Start";
+
+    clearInterval(timer);
+    clearTimeout(screenshotTimeout);
+
+  }
+
+}
+
+function endWork(){
+
+  tracking = false;
+
+  clearInterval(timer);
+  clearTimeout(screenshotTimeout);
+
+  ipc.send("end-session");
+
+  alert("Logged out");
+}
+
+
+ipc.on("status-update",(event,status)=>{
+
+const statusEl = document.getElementById("status");
+
+statusEl.innerText = "Status: " + status.toUpperCase();
+
+if(status === "active"){
+  statusEl.style.color = "#4caf50";
+}else{
+  statusEl.style.color = "#f44336";
+}
+
+});
+
+ipc.on("force-stop", ()=>{
+  if(tracking){
+    tracking = false;
+
+    clearInterval(timer);
+    clearTimeout(screenshotTimeout);
+
+    document.getElementById("toggleBtn").innerText = "Start";
+
+    alert("Stopped due to inactivity");
+  }
+});
+
+ipc.on("activity-update",(event,percent)=>{
+  document.getElementById("activityBar").style.width = percent + "%";
+});
+
+
+
+ipc.on("app-update",(event,data)=>{
+  document.getElementById("app").innerText =
+  "App: " + data.app + " | " + data.title;
+});
+
+ipc.on("productivity-update",(event,percent)=>{
+
+  const bar = document.getElementById("productivityBar");
+
+  bar.style.width = percent + "%";
+  document.getElementById("productivityText").innerText = percent + "%";
+
+  if(percent > 70){
+    bar.style.background = "#4caf50";
+  }else if(percent > 40){
+    bar.style.background = "#ff9800";
+  }else{
+    bar.style.background = "#f44336";
+  }
+
+});
+
+ipc.on("user-data",(event,data)=>{
+  currentUser = data.name;
+  document.getElementById("user").innerText =
+  "User: " + currentUser;
+});
+
+// load saved timer on open
+document.getElementById("timer").innerText =
+`${format(Math.floor(seconds/3600))}:${format(Math.floor((seconds%3600)/60))}:${format(seconds%60)}`;
+
+</script>
+</div>
+</body>
+
+</html>

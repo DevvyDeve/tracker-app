@@ -1,0 +1,6 @@
+node_modules/
+dist/
+screenshots/
+uploads/
+*.log
+offline-queue.json

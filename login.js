@@ -46,7 +46,7 @@ btn.innerText = "Success...";
 window.api.send("login-success",{
   token: data.token,
   user: data.user_id,
-  name: "User"
+  name: email
 })
 
 }catch(err){

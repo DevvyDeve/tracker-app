@@ -18,8 +18,6 @@ const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const activeWin = require("active-win");
-// const FormData = require("form-data");
 const { mouse, keyboard } = require("@nut-tree-fork/nut-js");
 
 const screenshotFolder = path.join(__dirname,"screenshots");
@@ -42,11 +40,8 @@ let activityCount = 0;
 let intervalSeconds = 0;
 let lastActivity = Date.now();
 let lastMousePosition = null;
-let currentApp = "";
-let productiveTime = 0;
-let unproductiveTime = 0;
-let neutralTime = 0;
-let currentTitle = "";
+let currentApp = "Unknown";
+let currentTitle = "No active window";
 let idleTriggered = false;
 let isTracking = false;
 
@@ -87,7 +82,7 @@ win.loadFile("login.html");
 
 app.whenReady().then(async ()=>{
 
-  // 🔥 RANDOM SCREENSHOT SYSTEM
+console.log("APP STARTED 🔥");
 
 function getRandomTime(){
   return Math.floor(Math.random() * 300000) + 300000;
@@ -115,59 +110,6 @@ function startRandomScreenshots(){
 createWindow();
 startRandomScreenshots();
 
-setInterval(async ()=>{
-
-  try{
-
-    const result = await activeWin();
-
-    if(result){
-
-      const appName = result.owner.name;
-        const title = result.title;
-
-        const type = getProductivityType(appName, title);
-
-if(type === "productive"){
-  productiveTime += 5;
-}else if(type === "unproductive"){
-  unproductiveTime += 5;
-}else{
-  neutralTime += 5;
-}
-
-        // 👉 SAVE GLOBALLY
-        currentApp = appName;
-        currentTitle = title;
-
-      console.log("Active App:", appName, "|", title);
-
-      // 👉 SEND TO UI
-      if(win && win.webContents){
-        win.webContents.send("app-update", {
-          app: appName,
-          title: title
-        });
-
-        const total = productiveTime + unproductiveTime + neutralTime;
-
-let productivityPercent = 0;
-
-if(total > 0){
-  productivityPercent = Math.floor((productiveTime / total) * 100);
-}
-
-// 👉 SEND TO UI
-win.webContents.send("productivity-update", productivityPercent);
-      }
-
-    }
-
-  }catch(err){
-    console.log("App tracking error:", err.message);
-  }
-
-},5000);
 
 displays = await screenshot.listDisplays();
 setInterval(async () => {
@@ -201,6 +143,7 @@ lastMousePosition = pos;
 
 },1000);
 
+
 setInterval(()=>{
 
 let idleTime = Date.now() - lastActivity;
@@ -209,9 +152,8 @@ if(win && win.webContents){
 
 if(idleTime > 60000){
 
-  if(!idleTriggered){
-    idleTriggered = true;
-    isTracking = false;
+if(!idleTriggered){
+  idleTriggered = true;
 
     console.log("⚠️ USER IDLE");
 
@@ -227,7 +169,6 @@ if(idleTime > 60000){
   }
 
   idleTriggered = false;
-  isTracking = true;
 
   if(win && win.webContents){
     win.webContents.send("status-update","active");
@@ -241,9 +182,26 @@ if(idleTime > 60000){
 
 setInterval(()=>{
 
-if(!idleTriggered){
+if(!idleTriggered && isTracking){
   intervalSeconds++;
 }
+
+},1000);
+
+
+let activityHistory = [];
+
+setInterval(()=>{
+
+  if(!idleTriggered && isTracking){
+    activityHistory.push(activityCount);
+
+    if(activityHistory.length > 10){
+      activityHistory.shift(); // keep last 10 seconds
+    }
+
+    activityCount = 0;
+  }
 
 },1000);
 
@@ -298,7 +256,6 @@ setInterval(async () => {
 
 }, 15000);
 
-autoUpdater.checkForUpdatesAndNotify();
 
 });
 
@@ -323,9 +280,6 @@ if(sessionId && sessionDate !== today){
   sessionId = null;
   sessionDate = today;
 
-  productiveTime = 0;
-unproductiveTime = 0;
-neutralTime = 0;
 }
 
 try{
@@ -404,11 +358,10 @@ try{
 }
 
 let activityPercent = 0;
-if(intervalSeconds > 0){
-activityPercent = Math.min(
-Math.floor((activityCount / intervalSeconds) * 100),
-100
-);
+
+if(activityHistory.length >= 3){
+  const total = activityHistory.reduce((a,b)=>a+b,0);
+  activityPercent = Math.min(Math.floor(total * 10), 100);
 }
 
 if(win && win.webContents){
@@ -437,7 +390,6 @@ console.log("Upload success:", activityPercent + "% activity");
 
 fs.unlinkSync(filePath);
 activityCount = 0;
-intervalSeconds = 0;
 
 }catch(err){
 
@@ -501,6 +453,11 @@ ipcMain.on("login-success",(event,data)=>{
     });
   });
 
+  setTimeout(() => {
+  console.log("🚀 STARTING AUTO UPDATE CHECK...");
+  autoUpdater.checkForUpdatesAndNotify();
+}, 3000);
+
 })
 
 ipcMain.on("end-session", async () => {
@@ -537,6 +494,14 @@ ipcMain.on("logout", ()=>{
 
   win.loadFile("login.html");
 
+});
+
+ipcMain.on("start-tracking", ()=>{
+  isTracking = true;
+});
+
+ipcMain.on("stop-tracking", ()=>{
+  isTracking = false;
 });
 
 

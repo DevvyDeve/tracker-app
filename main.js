@@ -112,7 +112,13 @@ startRandomScreenshots();
 setInterval(()=>{
   const systemIdle = powerMonitor.getSystemIdleTime(); // system
   const manualIdle = (Date.now() - lastActivityTime) / 1000; // 🔥 fallback
-  const idleTime = Math.max(systemIdle, manualIdle);
+  let idleTime;
+
+  if(manualIdle < 5){
+    idleTime = manualIdle;
+  }else{
+    idleTime = systemIdle;
+  }
   console.log("Idle:", idleTime);
   if(idleTime >= 60 && isTracking && !idleTriggered){
 

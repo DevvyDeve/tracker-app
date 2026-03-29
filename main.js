@@ -19,8 +19,9 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const { powerMonitor } = require("electron");
-const screenshotFolder = path.join(__dirname,"screenshots");
-const queueFile = path.join(__dirname, "offline-queue.json");
+const userDataPath = app.getPath("userData");
+const screenshotFolder = path.join(userDataPath, "screenshots");
+const queueFile = path.join(userDataPath, "offline-queue.json");
 
 // create file if not exists
 if (!fs.existsSync(queueFile)) {

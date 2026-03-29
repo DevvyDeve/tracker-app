@@ -499,13 +499,10 @@ sessionId = null;
 });
 
 ipcMain.on("logout", ()=>{
-
   sessionId = null;
   userId = null;
   token = null;
-
   win.loadFile("login.html");
-
 });
 
 ipcMain.on("start-tracking", ()=>{

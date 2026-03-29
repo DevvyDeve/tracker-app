@@ -100,6 +100,14 @@ button:active{
 <button id="toggleBtn" class="start" onclick="toggleWork()">Start</button>
 <button class="end" onclick="endWork()">End Session</button>
 
+<div id="idleModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; justify-content:center; align-items:center;">
+  <div style="background:#fff; padding:30px; border-radius:10px; text-align:center;">
+    <h2>⚠️ Tracker Paused</h2>
+    <p>You are idle. Tracking paused.</p>
+    <button onclick="resumeTracking()">OK</button>
+  </div>
+</div>
+
 <script>
 const ipc = window.api;
 let currentUser = null;
@@ -120,6 +128,7 @@ function toggleWork(){
   if(!tracking){
 
     tracking = true;
+    ipc.send("start-tracking");
     btn.innerText = "Pause";
 
     timer = setInterval(()=>{
@@ -136,7 +145,6 @@ function toggleWork(){
       document.getElementById("timer").innerText =
       `${format(hrs)}:${format(mins)}:${format(secs)}`;
 
-      ipc.send("start-tracking");
 
     },1000);
 
@@ -166,28 +174,46 @@ function endWork(){
 
 ipc.on("status-update",(event,status)=>{
 
-const statusEl = document.getElementById("status");
+  const statusEl = document.getElementById("status");
+  const btn = document.getElementById("toggleBtn");
 
-statusEl.innerText = "Status: " + status.toUpperCase();
+  statusEl.innerText = "Status: " + status.toUpperCase();
 
-if(status === "active"){
-  statusEl.style.color = "#4caf50";
-}else{
-  statusEl.style.color = "#f44336";
-}
+  if(status === "active"){
+
+    statusEl.style.color = "#4caf50";
+
+    btn.innerText = "Pause";
+    tracking = true;
+
+  }else{
+
+    statusEl.style.color = "#f44336";
+
+    // 🔥 STOP TIMER
+    if(timer){
+      clearInterval(timer);
+      timer = null;
+    }
+
+    tracking = false;
+    btn.innerText = "Start";
+  }
 
 });
 
 ipc.on("force-stop", ()=>{
-  if(tracking){
-    tracking = false;
 
+  if(timer){
     clearInterval(timer);
-
-    document.getElementById("toggleBtn").innerText = "Start";
-
-    alert("Stopped due to inactivity");
+    timer = null;
   }
+
+  tracking = false;
+
+  const btn = document.getElementById("toggleBtn");
+  btn.innerText = "Start";
+
 });
 
 ipc.on("app-update",(event,data)=>{
@@ -226,6 +252,96 @@ ipc.on("user-data",(event,data)=>{
   "User: " + data.userId;
 
   updateTimerDisplay();
+});
+
+window.api.receive("idle-popup", ()=>{
+  document.getElementById("idleModal").style.display = "flex";
+});
+
+window.api.receive("resume-tracking", ()=>{
+
+  document.getElementById("idleModal").style.display = "none";
+
+  console.log("🔥 RESUME TRACKING TRIGGERED");
+
+  // 👉 ALWAYS clear timer first (important)
+  if(timer){
+    clearInterval(timer);
+  }
+
+  tracking = true;
+
+  const btn = document.getElementById("toggleBtn");
+  btn.innerText = "Pause";
+
+  // 👉 FORCE START TIMER
+  timer = setInterval(()=>{
+    seconds++;
+
+    if(userKey){
+      localStorage.setItem(userKey, seconds);
+    }
+
+    let hrs = Math.floor(seconds/3600);
+    let mins = Math.floor((seconds%3600)/60);
+    let secs = seconds%60;
+
+    document.getElementById("timer").innerText =
+    `${format(hrs)}:${format(mins)}:${format(secs)}`;
+
+  },1000);
+
+});
+
+function resumeTracking(){
+if(timer){
+  clearInterval(timer);
+}
+  tracking = true;
+
+  const btn = document.getElementById("toggleBtn");
+  btn.innerText = "Pause";
+
+  timer = setInterval(()=>{
+    seconds++;
+
+    if(userKey){
+      localStorage.setItem(userKey, seconds);
+    }
+
+    let hrs = Math.floor(seconds/3600);
+    let mins = Math.floor((seconds%3600)/60);
+    let secs = seconds%60;
+
+    document.getElementById("timer").innerText =
+    `${format(hrs)}:${format(mins)}:${format(secs)}`;
+
+  },1000);
+
+  window.api.send("start-tracking");
+
+  document.getElementById("idleModal").style.display = "none";
+}
+
+let lastSent = 0;
+
+window.addEventListener("mousemove", ()=>{
+  const now = Date.now();
+
+  if(now - lastSent > 500){ // limit spam
+    window.api.send("user-activity");
+    window.api.send("increment-activity");
+    lastSent = now;
+  }
+});
+
+window.addEventListener("keydown", ()=>{
+  window.api.send("user-activity");
+  window.api.send("increment-activity");
+});
+
+ipc.on("trigger-screenshot", ()=>{
+  window.api.send("trigger-screenshot");
 });
 
 </script>

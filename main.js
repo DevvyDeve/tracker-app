@@ -18,10 +18,8 @@ const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const { mouse, keyboard } = require("@nut-tree-fork/nut-js");
-
+const { powerMonitor } = require("electron");
 const screenshotFolder = path.join(__dirname,"screenshots");
-
 const queueFile = path.join(__dirname, "offline-queue.json");
 
 // create file if not exists
@@ -44,6 +42,7 @@ let currentApp = "Unknown";
 let currentTitle = "No active window";
 let idleTriggered = false;
 let isTracking = false;
+let activityHistory = [];
 
 function getProductivityType(app, title){
 
@@ -82,10 +81,8 @@ win.loadFile("login.html");
 
 app.whenReady().then(async ()=>{
 
-console.log("APP STARTED 🔥");
-
 function getRandomTime(){
-  return Math.floor(Math.random() * 300000) + 300000;
+  return Math.floor(Math.random() * 5000) + 5000;
 }
 
 function startRandomScreenshots(){
@@ -110,86 +107,57 @@ function startRandomScreenshots(){
 createWindow();
 startRandomScreenshots();
 
-
 displays = await screenshot.listDisplays();
-setInterval(async () => {
-
-try{
-
-try{
-  const keys = await keyboard.getPressedKeys();
-  if(keys.length > 0){
-    activityCount++;
-    lastActivity = Date.now();
-  }
-}catch(e){}
-
-let pos = await mouse.getPosition();
-
-if(!lastMousePosition){
-lastMousePosition = pos;
-}
-
-if(pos.x !== lastMousePosition.x || pos.y !== lastMousePosition.y){
-
-activityCount++;
-lastActivity = Date.now();
-
-}
-
-lastMousePosition = pos;
-
-}catch{}
-
-},1000);
-
 
 setInterval(()=>{
 
-let idleTime = Date.now() - lastActivity;
+  const idleTime = powerMonitor.getSystemIdleTime(); // seconds
 
-if(win && win.webContents){
+  console.log("System Idle:", idleTime);
 
-if(idleTime > 60000){
+  // 👉 USER IDLE
+  if(idleTime >= 60 && isTracking && !idleTriggered){
 
-if(!idleTriggered){
-  idleTriggered = true;
+    idleTriggered = true;
 
-    console.log("⚠️ USER IDLE");
+    console.log("⚠️ USER IDLE (SYSTEM)");
 
-    if(win && win.webContents){
-      win.webContents.send("status-update","idle");
+    if(win){
+      win.webContents.send("status-update","idle"); 
+      win.webContents.send("force-stop");
+
+      win.show();
+      win.focus();
+      win.setAlwaysOnTop(true);
+      win.webContents.send("idle-popup");
     }
+
   }
 
-}else{
+  // 👉 USER ACTIVE AGAIN
+  if(idleTime < 5 && idleTriggered){
 
-  if(idleTriggered){
-    console.log("✅ USER ACTIVE AGAIN");
+    console.log("🔥 USER ACTIVE AGAIN");
+
+    idleTriggered = false;
+
+    if(win){
+      win.webContents.send("status-update","active");
+      win.webContents.send("resume-tracking");
+      win.setAlwaysOnTop(false);
+    }
+
   }
 
-  idleTriggered = false;
+}, 3000);
 
-  if(win && win.webContents){
-    win.webContents.send("status-update","active");
-  }
-
-}
-
-}
-
-},5000);
 
 setInterval(()=>{
-
 if(!idleTriggered && isTracking){
   intervalSeconds++;
 }
-
 },1000);
 
-
-let activityHistory = [];
 
 setInterval(()=>{
 
@@ -252,7 +220,7 @@ setInterval(async () => {
 
   }
 
-  fs.writeFileSync(queueFile, JSON.stringify(newQueue));
+fs.writeFileSync(queueFile, JSON.stringify(newQueue, null, 2));
 
 }, 15000);
 
@@ -314,6 +282,7 @@ if(isSensitive(currentApp, currentTitle)){
 }
 if(sessionId && isTracking && !idleTriggered){
   await uploadScreenshot(filePath);
+  console.log("📸 Screenshot captured:", filePath);
 }else{
   fs.unlinkSync(filePath);
 }
@@ -371,33 +340,63 @@ if(win && win.webContents){
 const imageBuffer = fs.readFileSync(filePath);
 const base64Image = imageBuffer.toString("base64");
 
-await axios.post(API_URL + "/upload-screenshot",
-{
-  session_id: sessionId,
-  activity_percent: activityPercent,
-  screenshot: base64Image,
-  app_name: currentApp,
-  window_title: currentTitle
+let success = false;
 
-},
-{
-headers:{
-Authorization:`Bearer ${token}`
+try{
+
+  await axios.post(API_URL + "/upload-screenshot",
+  {
+    session_id: sessionId,
+    activity_percent: activityPercent,
+    screenshot: base64Image,
+    app_name: currentApp,
+    window_title: currentTitle
+  },
+  {
+    headers:{
+      Authorization:`Bearer ${token}`
+    }
+  });
+
+  success = true;
+
+}catch(err){
+
+  if(err.response && err.response.status === 401){
+
+    console.log("❌ TOKEN EXPIRED → LOGOUT");
+
+    sessionId = null;
+    userId = null;
+    token = null;
+    isTracking = false;
+
+    if(win){
+      win.loadFile("login.html");
+    }
+
+    return;
+  }
+
+  console.log("Upload error:", err.message);
 }
-})
 
-console.log("Upload success:", activityPercent + "% activity");
+if(success){
+  console.log("Upload success:", activityPercent + "% activity");
+}
 
-fs.unlinkSync(filePath);
+if(fs.existsSync(filePath)){
+  fs.unlinkSync(filePath);
+}
 activityCount = 0;
 
 }catch(err){
 
   console.log("Upload error:", err.message);
 
-  // 👉 SAVE TO OFFLINE QUEUE
-  const queue = JSON.parse(fs.readFileSync(queueFile));
+const queue = JSON.parse(fs.readFileSync(queueFile));
 
+if(fs.existsSync(filePath)){
   queue.push({
     filePath: filePath,
     sessionId: sessionId,
@@ -406,18 +405,30 @@ activityCount = 0;
     app: currentApp,
     title: currentTitle
   });
+}else{
+  console.log("File missing, not added to queue");
+}
 
-  fs.writeFileSync(queueFile, JSON.stringify(queue));
+if(queue.length > 50){
+  const removed = queue.shift();
 
+  // delete old file para hindi mag accumulate
+  if(removed && fs.existsSync(removed.filePath)){
+    fs.unlinkSync(removed.filePath);
+  }
+}
+
+fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
 }
 
 }
 
 ipcMain.on("login-success",(event,data)=>{
-
   userId = data.user
   token = data.token
   isTracking = true;
+  lastActivity = Date.now();
+  idleTriggered = false;
   let userName = data.name
   console.log("User logged in:",userId);
 
@@ -497,11 +508,52 @@ ipcMain.on("logout", ()=>{
 });
 
 ipcMain.on("start-tracking", ()=>{
+
   isTracking = true;
+
+  if(idleTriggered){
+
+    console.log("🔁 MANUAL RESUME");
+
+    idleTriggered = false;
+    lastActivity = Date.now();
+
+    if(win){
+      win.webContents.send("status-update","active");
+      win.webContents.send("resume-tracking");
+      win.setAlwaysOnTop(false);
+    }
+
+  }
+
 });
 
 ipcMain.on("stop-tracking", ()=>{
   isTracking = false;
+});
+
+ipcMain.on("user-activity", ()=>{
+  lastActivity = Date.now();
+
+  if(idleTriggered){
+    console.log("🔥 USER IS ACTIVE AGAIN");
+
+    idleTriggered = false;
+    isTracking = true;
+
+    if(win){
+      win.webContents.send("status-update","active");
+      win.webContents.send("resume-tracking");
+      win.setAlwaysOnTop(false);
+    }
+  }
+});
+
+
+ipcMain.on("increment-activity", ()=>{
+  if(activityCount < 10){
+    activityCount++;
+  }
 });
 
 

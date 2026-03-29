@@ -44,6 +44,7 @@ let currentTitle = "No active window";
 let idleTriggered = false;
 let isTracking = false;
 let activityHistory = [];
+let lastActivityTime = Date.now(); 
 
 function getProductivityType(app, title){
 
@@ -108,40 +109,30 @@ function startRandomScreenshots(){
 createWindow();
 startRandomScreenshots();
 
-displays = await screenshot.listDisplays();
-
 setInterval(()=>{
-
-  const idleTime = powerMonitor.getSystemIdleTime(); // seconds
-
-  console.log("System Idle:", idleTime);
-
-  // 👉 USER IDLE
+  const systemIdle = powerMonitor.getSystemIdleTime(); // system
+  const manualIdle = (Date.now() - lastActivityTime) / 1000; // 🔥 fallback
+  const idleTime = Math.max(systemIdle, manualIdle);
+  console.log("Idle:", idleTime);
   if(idleTime >= 60 && isTracking && !idleTriggered){
 
     idleTriggered = true;
 
-    console.log("⚠️ USER IDLE (SYSTEM)");
+    console.log("⚠️ USER IDLE");
 
     if(win){
       win.webContents.send("status-update","idle"); 
       win.webContents.send("force-stop");
-
       win.show();
       win.focus();
       win.setAlwaysOnTop(true);
       win.webContents.send("idle-popup");
     }
-
   }
 
-  // 👉 USER ACTIVE AGAIN
   if(idleTime < 5 && idleTriggered){
-
     console.log("🔥 USER ACTIVE AGAIN");
-
     idleTriggered = false;
-
     if(win){
       win.webContents.send("status-update","active");
       win.webContents.send("resume-tracking");
@@ -532,6 +523,7 @@ ipcMain.on("stop-tracking", ()=>{
 
 ipcMain.on("user-activity", ()=>{
   lastActivity = Date.now();
+  lastActivityTime = Date.now(); 
 
   if(idleTriggered){
     console.log("🔥 USER IS ACTIVE AGAIN");
@@ -546,7 +538,6 @@ ipcMain.on("user-activity", ()=>{
     }
   }
 });
-
 
 ipcMain.on("increment-activity", ()=>{
   if(activityCount < 10){

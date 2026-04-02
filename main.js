@@ -84,7 +84,7 @@ win.loadFile("login.html");
 app.whenReady().then(async ()=>{
 
 function getRandomTime(){
-  return Math.floor(Math.random() * 5000) + 5000;
+  return Math.floor(Math.random() * 300000) + 420000;
 }
 
 function startRandomScreenshots(){
@@ -495,21 +495,62 @@ sessionId = null;
 
 });
 
-ipcMain.on("logout", ()=>{
+ipcMain.on("logout", async ()=>{
+  if(sessionId){
+    try{
+      await axios.post(API_URL + "/end-session",
+      { session_id: sessionId },
+      {
+        headers:{ Authorization:`Bearer ${token}` }
+      });
+
+      console.log("🔚 Session ended (logout)");
+
+    }catch(err){
+      console.log("Logout end error:", err.message);
+    }
+  }
   sessionId = null;
   userId = null;
   token = null;
   win.loadFile("login.html");
 });
 
-ipcMain.on("start-tracking", ()=>{
+app.on("before-quit", async ()=>{
+  if(sessionId){
+    try{
+      await axios.post(API_URL + "/end-session",
+      { session_id: sessionId },
+      {
+        headers:{ Authorization:`Bearer ${token}` }
+      });
+      console.log("💀 Session ended (app close)");
+    }catch(err){
+      console.log("Close end error:", err.message);
+    }
+  }
 
+});
+
+ipcMain.on("start-tracking", async ()=>{
   isTracking = true;
+  if(!sessionId){
+    try{
+      const response = await axios.post(
+        API_URL + "/start-session",
+        {},
+        {
+          headers:{ Authorization:`Bearer ${token}` }
+        }
+      );
+      sessionId = response.data.session_id;
+      sessionDate = new Date().toDateString();
 
+    }catch(err){
+      console.log("Start session error:", err.message);
+    }
+  }
   if(idleTriggered){
-
-    console.log("🔁 MANUAL RESUME");
-
     idleTriggered = false;
     lastActivity = Date.now();
 
@@ -518,13 +559,23 @@ ipcMain.on("start-tracking", ()=>{
       win.webContents.send("resume-tracking");
       win.setAlwaysOnTop(false);
     }
-
   }
 
 });
 
-ipcMain.on("stop-tracking", ()=>{
+ipcMain.on("stop-tracking", async ()=>{
   isTracking = false;
+  if(!sessionId) return;
+  try{
+    await axios.post(API_URL + "/end-session",
+    { session_id: sessionId },
+    {
+      headers:{ Authorization:`Bearer ${token}` }
+    });
+    sessionId = null;
+  }catch(err){
+    console.log("Pause end error:", err.message);
+  }
 });
 
 ipcMain.on("user-activity", ()=>{

@@ -430,28 +430,6 @@ ipcMain.on("login-success",(event,data)=>{
   let userName = data.name
   console.log("User logged in:",userId);
 
-    (async () => {
-  try {
-    const response = await axios.post(
-      API_URL + "/start-session",
-      {},
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
-
-    sessionId = response.data.session_id;
-    sessionDate = new Date().toDateString();
-
-    console.log("AUTO SESSION START:", sessionId);
-
-  } catch(err) {
-    console.log("Auto start failed:", err.message);
-  }
-})();
-
   win.loadFile("index.html")
 
   // 👉 SEND USER DATA SA FRONTEND

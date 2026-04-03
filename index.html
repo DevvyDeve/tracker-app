@@ -323,7 +323,7 @@ let lastSent = 0;
 
 window.addEventListener("mousemove", ()=>{
   const now = Date.now();
-
+console.log("🖱️ Mouse move detected");
   if(now - lastSent > 500){ // limit spam
     window.api.send("user-activity");
     window.api.send("increment-activity");
@@ -336,7 +336,8 @@ window.addEventListener("keydown", ()=>{
   window.api.send("increment-activity");
 });
 
-ipc.on("trigger-screenshot", ()=>{
+window.api.receive("trigger-screenshot", ()=>{
+  console.log("📡 Trigger received from main");
   window.api.send("trigger-screenshot");
 });
 

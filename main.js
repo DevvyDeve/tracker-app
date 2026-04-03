@@ -36,6 +36,8 @@ let win;
 let displays = [];
 let currentMonitor = 0;
 let activityCount = 0;
+let totalActivity = 0;
+let lastActivityTick = Date.now();
 let intervalSeconds = 0;
 let lastActivity = Date.now();
 let lastMousePosition = null;
@@ -81,16 +83,27 @@ win.loadFile("login.html");
 
 }
 
+
 app.whenReady().then(async ()=>{
 
 function getRandomTime(){
-  return Math.floor(Math.random() * 300000) + 420000;
+  return Math.floor(Math.random() * 5000) + 10000;
 }
 
 function startRandomScreenshots(){
 
   setTimeout(() => {
+console.log("⏱️ Timer fired");
 
+if(sessionId && isTracking && !idleTriggered){
+  console.log("📸 READY TO TAKE SCREENSHOT");
+}else{
+  console.log("❌ NOT READY", {
+    sessionId,
+    isTracking,
+    idleTriggered
+  });
+}
     if(sessionId && isTracking && !idleTriggered){
       console.log("📸 RANDOM SCREENSHOT TRIGGER");
 
@@ -106,6 +119,13 @@ function startRandomScreenshots(){
 
 }
 
+const { screen } = require("electron");
+
+console.log("🚀 App ready");
+
+displays = screen.getAllDisplays();
+
+console.log("🖥️ Displays detected:", displays.length);
 createWindow();
 startRandomScreenshots();
 
@@ -226,7 +246,7 @@ fs.writeFileSync(queueFile, JSON.stringify(newQueue, null, 2));
 });
 
 ipcMain.on("trigger-screenshot", async ()=>{
-
+console.log("📥 IPC trigger-screenshot received");
     const today = new Date().toDateString();
 
 if(sessionId && sessionDate !== today){
@@ -250,13 +270,16 @@ if(sessionId && sessionDate !== today){
 
 try{
 
-
-if(displays.length === 0) return;
+console.log("📸 Taking screenshot...");
+if(displays.length === 0){
+  console.log("❌ NO DISPLAYS FOUND");
+  return;
+}
 
 let display = displays[currentMonitor];
 
-let monitorName = display.id.replace(/[^a-zA-Z0-9]/g,"");
-const img = await screenshot({ screen: display.id });
+let monitorName = String(display.id).replace(/[^a-zA-Z0-9]/g,"");
+const img = await screenshot({ screen: display.id.toString() });
 const fileName = `${Date.now()}-${monitorName}.jpg`;
 const filePath = path.join(screenshotFolder,fileName);
 
@@ -317,19 +340,14 @@ function isSensitive(app, title){
 }
 
 async function uploadScreenshot(filePath){
-
+console.log("🚀 Upload function called");
 try{
 
   if(!isTracking || idleTriggered){
   return;
 }
 
-let activityPercent = 0;
-
-if(activityHistory.length >= 3){
-  const total = activityHistory.reduce((a,b)=>a+b,0);
-  activityPercent = Math.min(Math.floor(total * 10), 100);
-}
+let activityPercent = Math.min(Math.floor(totalActivity * 4), 100);
 
 if(win && win.webContents){
   win.webContents.send("activity-update", activityPercent);
@@ -341,7 +359,9 @@ const base64Image = imageBuffer.toString("base64");
 let success = false;
 
 try{
-
+console.log("📤 Uploading...");
+console.log("Session:", sessionId);
+console.log("Activity:", activityPercent);
   await axios.post(API_URL + "/upload-screenshot",
   {
     session_id: sessionId,
@@ -359,7 +379,7 @@ try{
   success = true;
 
 }catch(err){
-
+console.log("❌ Upload error FULL:", err.response?.data || err.message);
   if(err.response && err.response.status === 401){
 
     console.log("❌ TOKEN EXPIRED → LOGOUT");
@@ -512,6 +532,7 @@ app.on("before-quit", async ()=>{
 
 ipcMain.on("start-tracking", async ()=>{
   isTracking = true;
+
   if(!sessionId){
     try{
       const response = await axios.post(
@@ -575,9 +596,14 @@ ipcMain.on("user-activity", ()=>{
 });
 
 ipcMain.on("increment-activity", ()=>{
-  if(activityCount < 10){
-    activityCount++;
+  const now = Date.now();
+
+  if(now - lastActivityTick > 200){
+    totalActivity++;
+    lastActivityTick = now;
   }
+
+  console.log("🖱️ Total Activity:", totalActivity);
 });
 
 

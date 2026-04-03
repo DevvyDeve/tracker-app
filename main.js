@@ -87,7 +87,7 @@ win.loadFile("login.html");
 app.whenReady().then(async ()=>{
 
 function getRandomTime(){
-  return Math.floor(Math.random() * 5000) + 10000;
+  return Math.floor(Math.random() * (600000 - 420000)) + 420000;
 }
 
 function startRandomScreenshots(){
@@ -116,6 +116,8 @@ if(sessionId && isTracking && !idleTriggered){
     startRandomScreenshots(); // loop
 
   }, getRandomTime());
+
+  
 
 }
 

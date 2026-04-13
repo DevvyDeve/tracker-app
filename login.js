@@ -16,44 +16,63 @@ toggle.addEventListener("click", ()=>{
 });
 
 btn.addEventListener("click", async ()=>{
-btn.disabled = true;
-btn.innerText = "Logging in...";
 
-let email = document.getElementById("email").value
-let password = document.getElementById("password").value
+  btn.disabled = true;
+  btn.innerText = "Logging in...";
+
+let email = document.getElementById("email").value.trim();
+let password = document.getElementById("password").value;
+
+// ✅ FIX: Basic validation bago mag-send
+if(!email || !password){
+  btn.disabled = false;
+  btn.innerText = "Login";
+  document.getElementById("status").innerText = "❌ Please enter email and password.";
+  return;
+}
 
 try{
 
-const res = await fetch(LOGIN_URL,{
-  method:"POST",
-  headers:{
-    "Content-Type":"application/json"
-  },
-  body: JSON.stringify({
-    username: email,
-    password: password
-  })
-})
+    // 🔥 DITO MO ILALAGAY
+    const res = await fetch(LOGIN_URL,{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json"
+      },
+      body: JSON.stringify({
+        username: email,
+        password: password
+      })
+    })
 
-const data = await res.json()
+    const data = await res.json()
 
-if(!data.token){
-  throw new Error("Invalid email or password")
-}
+    console.log("LOGIN RESPONSE:", data)
 
-btn.innerText = "Success...";
+    if(data.error){
+      throw new Error(data.error)
+    }
 
-window.api.send("login-success",{
-  token: data.token,
-  user: data.user_id,
-  name: email
-})
+    if(!data.token){
+      throw new Error("No token received")
+    }
 
-}catch(err){
-btn.disabled = false;
-btn.innerText = "Login";
-document.getElementById("status").innerText =
-"❌ " + (err.message || "Invalid email or password");
-}
+    // ✅ success
+    btn.innerText = "Success...";
+
+    window.api.send("login-success",{
+      token: data.token,
+      user: data.user_id,
+      name: data.display_name || email,
+      email: data.email || email
+    })
+
+  }catch(err){
+    btn.disabled = false;
+    btn.innerText = "Login";
+
+    document.getElementById("status").innerText =
+    "❌ " + err.message;
+  }
 
 })

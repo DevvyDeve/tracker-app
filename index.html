@@ -93,7 +93,15 @@ button:active{
     <div class="container">
 
 <h1>Work Tracker</h1>
-<div id="user" class="info">User: -</div>
+<div style="display:flex; align-items:center; gap:10px; justify-content:center; margin-bottom:10px;">
+  <img id="avatar" 
+       src="https://ui-avatars.com/api/?name=User&background=4caf50&color=fff"
+       style="width:50px; height:50px; border-radius:50%; border:2px solid #4caf50;" />
+  <div style="text-align:left;">
+    <div id="userName" style="font-weight:bold;">-</div>
+    <div id="userEmail" style="font-size:12px; color:#666;">-</div>
+  </div>
+</div>
 <div id="status" class="info">Status: ACTIVE</div>
 <div id="timer">00:00:00</div>
 <div id="app" class="info">App: -</div>
@@ -111,60 +119,49 @@ button:active{
 <script>
 const ipc = window.api;
 let currentUser = null;
-let timer;
-let seconds = 0;
 let userKey = null;
-let tracking = false;
+let tracking = null;
+let seconds = 0;
+
+// ✅ FIX: I-restore ang timer display kapag nag-open/login
+ipc.on("session-data", (event, data) => {
+  if(data.total && data.total > 0){
+    seconds = data.total;
+    updateTimerDisplay();
+  }
+});
+
+ipc.on("timer-update", (event, secs)=>{
+  seconds = secs;
+
+  let hrs = Math.floor(seconds/3600);
+  let mins = Math.floor((seconds%3600)/60);
+  let secs2 = seconds%60;
+
+  document.getElementById("timer").innerText =
+  `${format(hrs)}:${format(mins)}:${format(secs2)}`;
+});
 
 function format(n){
   return n.toString().padStart(2,"0");
 }
 
-
 function toggleWork(){
 
   const btn = document.getElementById("toggleBtn");
 
-  if(!tracking){
-
-    tracking = true;
+  if(btn.innerText === "Start"){
     ipc.send("start-tracking");
-    btn.innerText = "Pause";
-
-    timer = setInterval(()=>{
-
-      seconds++;
-      if(userKey){
-        localStorage.setItem(userKey, seconds);
-      }
-
-      let hrs = Math.floor(seconds/3600);
-      let mins = Math.floor((seconds%3600)/60);
-      let secs = seconds%60;
-
-      document.getElementById("timer").innerText =
-      `${format(hrs)}:${format(mins)}:${format(secs)}`;
-
-
-    },1000);
-
-
   }else{
-
-    tracking = false;
-    btn.innerText = "Start";
     ipc.send("stop-tracking");
-    clearInterval(timer);
-
   }
 
 }
 
 function endWork(){
+  if(!confirm("Are you sure you want to logout?")) return;
   tracking = false;
-  clearInterval(timer);
-  ipc.send("logout"); 
-  alert("Logged out");
+  ipc.send("logout");
 }
 
 
@@ -182,15 +179,10 @@ ipc.on("status-update",(event,status)=>{
     btn.innerText = "Pause";
     tracking = true;
 
+
   }else{
 
     statusEl.style.color = "#f44336";
-
-    // 🔥 STOP TIMER
-    if(timer){
-      clearInterval(timer);
-      timer = null;
-    }
 
     tracking = false;
     btn.innerText = "Start";
@@ -199,11 +191,6 @@ ipc.on("status-update",(event,status)=>{
 });
 
 ipc.on("force-stop", ()=>{
-
-  if(timer){
-    clearInterval(timer);
-    timer = null;
-  }
 
   tracking = false;
 
@@ -228,24 +215,32 @@ function updateTimerDisplay(){
 
 ipc.on("user-data",(event,data)=>{
 
-  const today = new Date().toDateString();
+userKey = null; 
 
-  const savedDateKey = "date_" + data.userId;
-  const savedDate = localStorage.getItem(savedDateKey);
+// detect kung email yung name
+const isEmail = data.name && data.name.includes("@");
 
-  userKey = "seconds_" + data.userId;
+// 👉 display name (before @)
+const displayName = isEmail
+  ? data.name.split("@")[0]
+  : data.name;
 
-  // 👉 CHECK IF NEW DAY
-  if(savedDate !== today){
-    seconds = 0;
-    localStorage.setItem(userKey, 0);
-    localStorage.setItem(savedDateKey, today);
+document.getElementById("userName").innerText =
+  displayName || "User";
+
+// 👉 email
+document.getElementById("userEmail").innerText =
+  data.email || data.name || "No email";
+
+  // ✅ AVATAR (AUTO PLACEHOLDER IF NO IMAGE)
+  const avatar = document.getElementById("avatar");
+
+  if(data.avatar){
+    avatar.src = data.avatar;
   }else{
-    seconds = parseInt(localStorage.getItem(userKey)) || 0;
+    // fallback avatar (auto generate)
+    avatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || "User")}&background=4caf50&color=fff`;
   }
-
-  document.getElementById("user").innerText =
-  "User: " + data.userId;
 
   updateTimerDisplay();
 });
@@ -259,60 +254,21 @@ window.api.receive("resume-tracking", ()=>{
   document.getElementById("idleModal").style.display = "none";
 
   console.log("🔥 RESUME TRACKING TRIGGERED");
-
-  // 👉 ALWAYS clear timer first (important)
-  if(timer){
-    clearInterval(timer);
-  }
-
   tracking = true;
 
   const btn = document.getElementById("toggleBtn");
   btn.innerText = "Pause";
-
-  // 👉 FORCE START TIMER
-  timer = setInterval(()=>{
-    seconds++;
-
-    if(userKey){
-      localStorage.setItem(userKey, seconds);
-    }
-
-    let hrs = Math.floor(seconds/3600);
-    let mins = Math.floor((seconds%3600)/60);
-    let secs = seconds%60;
-
-    document.getElementById("timer").innerText =
-    `${format(hrs)}:${format(mins)}:${format(secs)}`;
-
-  },1000);
 
 });
 
 function resumeTracking(){
-if(timer){
-  clearInterval(timer);
-}
+
   tracking = true;
 
   const btn = document.getElementById("toggleBtn");
   btn.innerText = "Pause";
 
-  timer = setInterval(()=>{
-    seconds++;
 
-    if(userKey){
-      localStorage.setItem(userKey, seconds);
-    }
-
-    let hrs = Math.floor(seconds/3600);
-    let mins = Math.floor((seconds%3600)/60);
-    let secs = seconds%60;
-
-    document.getElementById("timer").innerText =
-    `${format(hrs)}:${format(mins)}:${format(secs)}`;
-
-  },1000);
 
   window.api.send("start-tracking");
 

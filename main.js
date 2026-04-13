@@ -5,9 +5,17 @@ autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = "info";
 
 let sessionId = null;
+let recoveredSession = false;
+let sessionStartTime = null;
+let totalWorkedSeconds = 0;
 let sessionDate = null;
-let userId = null
-let token = null
+let userId = null;
+let token = null;
+let intervals = [];
+let selectedEmployer = null;
+let userName = null;  
+let userEmail = null; 
+let userAvatar = null;
 
 
 const API_URL = "https://vajobmarketplace.com/wp-json/worktracker/v1";
@@ -22,6 +30,7 @@ const { powerMonitor } = require("electron");
 const userDataPath = app.getPath("userData");
 const screenshotFolder = path.join(userDataPath, "screenshots");
 const queueFile = path.join(userDataPath, "offline-queue.json");
+const timeFile = path.join(userDataPath, "time.json");
 
 // create file if not exists
 if (!fs.existsSync(queueFile)) {
@@ -29,7 +38,7 @@ if (!fs.existsSync(queueFile)) {
 }
 
 if (!fs.existsSync(screenshotFolder)) {
-fs.mkdirSync(screenshotFolder);
+fs.mkdirSync(screenshotFolder, { recursive: true });
 }
 
 let win;
@@ -47,6 +56,49 @@ let idleTriggered = false;
 let isTracking = false;
 let activityHistory = [];
 let lastActivityTime = Date.now(); 
+function saveLocalTime(){
+  const data = {
+    totalWorkedSeconds,
+    sessionDate,
+    sessionId,
+    sessionStartTime, 
+    wasTracking: isTracking
+  };
+  fs.writeFileSync(timeFile, JSON.stringify(data));
+}
+
+function loadLocalTime(){
+
+  if (!fs.existsSync(timeFile)) return;
+
+  try{
+    const data = JSON.parse(fs.readFileSync(timeFile));
+
+    const todayUTC = new Date().toLocaleDateString('en-CA');
+
+const todayLocal = new Date().toLocaleDateString('en-CA');
+
+if(data.sessionDate === todayLocal){
+  totalWorkedSeconds = data.totalWorkedSeconds || 0;
+  sessionDate = data.sessionDate;
+  sessionId = data.sessionId || null;
+  sessionStartTime = null;
+  isTracking = data.wasTracking || false;
+
+  console.log("✅ Restored timer:", totalWorkedSeconds);
+
+}else{
+  console.log("🌅 New day → reset timer");
+
+  totalWorkedSeconds = 0;
+  sessionDate = todayLocal;
+  saveLocalTime();
+}
+
+  }catch(err){
+    console.log("Load time error:", err.message);
+  }
+}
 
 function getProductivityType(app, title){
 
@@ -85,10 +137,24 @@ win.loadFile("login.html");
 
 
 app.whenReady().then(async ()=>{
+loadLocalTime();
+
+// ✅ FIX: Check for updates once lang sa startup
+setTimeout(() => {
+  console.log("🚀 STARTING AUTO UPDATE CHECK...");
+  autoUpdater.checkForUpdatesAndNotify();
+}, 5000);
 
 function getRandomTime(){
   return Math.floor(Math.random() * (600000 - 420000)) + 420000;
 }
+
+intervals.push(setInterval(()=>{
+  if(isTracking && sessionId){
+    saveWorkedTime();
+    saveLocalTime();
+  }
+},120000));
 
 function startRandomScreenshots(){
 
@@ -108,7 +174,7 @@ if(sessionId && isTracking && !idleTriggered){
       console.log("📸 RANDOM SCREENSHOT TRIGGER");
 
       // 👉 trigger existing screenshot system mo
-      if(win && win.webContents){
+      if(win && !win.isDestroyed()){
         win.webContents.send("trigger-screenshot");
       }
     }
@@ -131,8 +197,8 @@ console.log("🖥️ Displays detected:", displays.length);
 createWindow();
 startRandomScreenshots();
 
-setInterval(()=>{
-  const systemIdle = powerMonitor.getSystemIdleTime(); // system
+let idleChecker = setInterval(async ()=>{
+  const systemIdle = powerMonitor.getSystemIdleTime();
   const manualIdle = (Date.now() - lastActivityTime) / 1000; // 🔥 fallback
   let idleTime;
 
@@ -142,13 +208,21 @@ setInterval(()=>{
     idleTime = systemIdle;
   }
   console.log("Idle:", idleTime);
-  if(idleTime >= 60 && isTracking && !idleTriggered){
+if(idleTime >= 120 && isTracking && !idleTriggered){
 
     idleTriggered = true;
 
+    totalWorkedSeconds = getCurrentTotalSeconds();
+    sessionStartTime = null;
+    
+
+    // ✅ FIX: I-save muna bago mag-idle para walang nawalang oras
+    saveWorkedTime();
+    saveLocalTime();
+    isTracking = false;
     console.log("⚠️ USER IDLE");
 
-    if(win){
+    if(win && !win.isDestroyed()){
       win.webContents.send("status-update","idle"); 
       win.webContents.send("force-stop");
       win.show();
@@ -158,28 +232,58 @@ setInterval(()=>{
     }
   }
 
-  if(idleTime < 5 && idleTriggered){
-    console.log("🔥 USER ACTIVE AGAIN");
-    idleTriggered = false;
-    if(win){
-      win.webContents.send("status-update","active");
-      win.webContents.send("resume-tracking");
-      win.setAlwaysOnTop(false);
-    }
+if(idleTime < 5 && idleTriggered){
+  console.log("🔥 USER ACTIVE AGAIN");
 
+  idleTriggered = false;
+
+// 🔥 START TIMER ONLY IF SESSION EXISTS
+if(sessionId){
+  isTracking = true;
+}else{
+  return; // 🚫 DO NOT START WITHOUT SESSION
+}
+
+  // ✅ restart timer properly
+  sessionStartTime = Date.now();
+
+  if(win && !win.isDestroyed()){
+    win.webContents.send("status-update","active");
+    win.webContents.send("resume-tracking");
+    win.setAlwaysOnTop(false);
+
+    win.webContents.send("session-data", {
+      start: sessionStartTime,
+      total: totalWorkedSeconds
+    });
   }
+}
 
 }, 3000);
 
 
-setInterval(()=>{
+intervals.push(setInterval(()=>{
 if(!idleTriggered && isTracking){
   intervalSeconds++;
 }
-},1000);
+},1000));
+
+intervals.push(setInterval(()=>{
+
+  if(isTracking){
+
+let currentSeconds = getCurrentTotalSeconds();
 
 
-setInterval(()=>{
+    if(win && !win.isDestroyed()){
+      win.webContents.send("timer-update", currentSeconds);
+    }
+
+  }
+
+},1000));
+
+intervals.push(setInterval(()=>{
 
   if(!idleTriggered && isTracking){
     activityHistory.push(activityCount);
@@ -191,9 +295,9 @@ setInterval(()=>{
     activityCount = 0;
   }
 
-},1000);
+},1000));
 
-setInterval(async () => {
+let queueRetry = setInterval(async () => {
 
   let queue = JSON.parse(fs.readFileSync(queueFile));
 
@@ -249,26 +353,7 @@ fs.writeFileSync(queueFile, JSON.stringify(newQueue, null, 2));
 
 ipcMain.on("trigger-screenshot", async ()=>{
 console.log("📥 IPC trigger-screenshot received");
-    const today = new Date().toDateString();
-
-if(sessionId && sessionDate !== today){
-
-  console.log("New day detected → starting new session");
-
-  // end old session
-  try{
-    await axios.post(API_URL + "/end-session",
-    { session_id: sessionId },
-    { headers:{ Authorization:`Bearer ${token}` } }
-    );
-  }catch(err){
-    console.log("Auto end failed:", err.message);
-  }
-
-  sessionId = null;
-  sessionDate = today;
-
-}
+    const today = new Date().toLocaleDateString('en-CA');
 
 try{
 
@@ -342,16 +427,21 @@ function isSensitive(app, title){
 }
 
 async function uploadScreenshot(filePath){
+  if(!token || !sessionId) return;
 console.log("🚀 Upload function called");
+
+  // ✅ FIX: Declare sa labas ng try para ma-access sa catch
+  let activityPercent = 0;
+
 try{
 
   if(!isTracking || idleTriggered){
   return;
 }
 
-let activityPercent = Math.min(Math.floor(totalActivity * 4), 100);
+activityPercent = Math.min(Math.floor(totalActivity * 4), 100);
 
-if(win && win.webContents){
+if(win && !win.isDestroyed()){
   win.webContents.send("activity-update", activityPercent);
 }
 
@@ -391,7 +481,7 @@ console.log("❌ Upload error FULL:", err.response?.data || err.message);
     token = null;
     isTracking = false;
 
-    if(win){
+    if(win && !win.isDestroyed()){
       win.loadFile("login.html");
     }
 
@@ -405,6 +495,8 @@ if(success){
   console.log("Upload success:", activityPercent + "% activity");
 }
 
+totalActivity = 0;
+
 if(fs.existsSync(filePath)){
   fs.unlinkSync(filePath);
 }
@@ -413,6 +505,10 @@ activityCount = 0;
 }catch(err){
 
   console.log("Upload error:", err.message);
+
+  // ✅ FIX: I-reset ang activity counter kahit offline
+  totalActivity = 0;
+  activityCount = 0;
 
 const queue = JSON.parse(fs.readFileSync(queueFile));
 
@@ -443,31 +539,135 @@ fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
 
 }
 
-ipcMain.on("login-success",(event,data)=>{
+ipcMain.on("login-success", async (event, data) => {
   userId = data.user
   token = data.token
-  isTracking = true;
+  isTracking = false;
   lastActivity = Date.now();
   idleTriggered = false;
-  let userName = data.name
-  console.log("User logged in:",userId);
+  userName = data.name
+  userEmail = data.email;
+  userAvatar = data.avatar;
+  console.log("User logged in:", userId);
 
-  win.loadFile("index.html")
-
-  // 👉 SEND USER DATA SA FRONTEND
-  win.webContents.on("did-finish-load", ()=>{
-    win.webContents.send("user-data", {
-    userId: userId,
-    name: userName
+  // 🔥 BAGONG CODE — Fetch employers after login
+  try {
+    const empResponse = await axios.get(API_URL + "/get-employers", {
+      headers: { Authorization: `Bearer ${token}` }
     });
-  });
 
-  setTimeout(() => {
-  console.log("🚀 STARTING AUTO UPDATE CHECK...");
-  autoUpdater.checkForUpdatesAndNotify();
-}, 3000);
+    const employers = empResponse.data;
 
-})
+    // Kung isa lang ang employer — automatic na ang selection
+    if(employers.length === 1){
+      selectedEmployer = employers[0];
+      console.log("✅ Auto-selected employer:", selectedEmployer.employer_name);
+
+      // ✅ ORIGINAL CODE MO — nandito pa rin
+      const todayUTC = new Date().toLocaleDateString('en-CA');
+      if(!sessionDate){
+        sessionDate = todayUTC;
+        saveLocalTime();
+      }
+
+      // ✅ ORIGINAL CODE MO — session check
+      if(sessionId && token && isTracking){
+        console.log("♻️ Checking session after login...");
+        axios.post(API_URL + "/update-time", {
+          session_id: sessionId,
+          total_seconds: totalWorkedSeconds
+        },{
+          headers:{ Authorization:`Bearer ${token}` }
+        })
+        .then(()=>{
+          console.log("✅ Session valid → resuming");
+          if(isTracking){
+            sessionStartTime = Date.now();
+          }
+          if(sessionId){
+            isTracking = true;
+          }else{
+            return;
+          }
+        })
+        .catch((err)=>{
+          console.log("❌ Session invalid → reset", err.message);
+          sessionId = null;
+          isTracking = false;
+          saveLocalTime();
+          if(win && !win.isDestroyed()){
+            win.webContents.send("force-stop");
+            win.webContents.send("status-update","idle");
+          }
+        });
+      }
+
+      console.log("👉 LOADING INDEX");
+      win.loadFile("index.html");
+      win.webContents.once("did-finish-load", ()=>{
+        win.webContents.send("user-data", {
+          userId: userId,
+          name: userName,
+          email: userEmail,
+          avatar: userAvatar
+        });
+        win.webContents.send("session-data", {
+          start: sessionStartTime,
+          total: totalWorkedSeconds
+        });
+      });
+
+    } else {
+      // Kung 2+ employers — ipakita ang employer selector screen
+      console.log("👥 Multiple employers found:", employers.length);
+
+      // ✅ ORIGINAL CODE MO — session date check
+      const todayUTC = new Date().toLocaleDateString('en-CA');
+      if(!sessionDate){
+        sessionDate = todayUTC;
+        saveLocalTime();
+      }
+
+      win.loadFile("employer-select.html");
+      win.webContents.once("did-finish-load", () => {
+        win.webContents.send("employer-list", employers);
+      });
+    }
+
+  } catch(err) {
+    console.log("❌ Failed to fetch employers:", err.message);
+
+    if(err.response && err.response.status === 404){
+      console.log("❌ No active employers found");
+      if(win && !win.isDestroyed()){
+        win.loadFile("login.html");
+      }
+      return;
+    }
+
+    // ✅ FALLBACK — kung may error sa fetch, ituloy ang normal flow
+    const todayUTC = new Date().toLocaleDateString('en-CA');
+    if(!sessionDate){
+      sessionDate = todayUTC;
+      saveLocalTime();
+    }
+
+    console.log("👉 LOADING INDEX (fallback)");
+    win.loadFile("index.html");
+    win.webContents.once("did-finish-load", ()=>{
+      win.webContents.send("user-data", {
+        userId: userId,
+        name: userName,
+        email: userEmail,
+        avatar: userAvatar
+      });
+      win.webContents.send("session-data", {
+        start: sessionStartTime,
+        total: totalWorkedSeconds
+      });
+    });
+  }
+});
 
 ipcMain.on("end-session", async () => {
 
@@ -495,8 +695,43 @@ sessionId = null;
 
 });
 
+
+
+// 🔥 BAGONG HANDLER — idagdag bago ang logout handler
+ipcMain.on("select-employer", async (event, employer) => {
+  selectedEmployer = employer;
+  console.log("✅ Employer selected:", selectedEmployer.employer_name);
+
+  const todayUTC = new Date().toLocaleDateString('en-CA');
+  if(!sessionDate){
+    sessionDate = todayUTC;
+    saveLocalTime();
+  }
+
+  win.loadFile("index.html");
+  win.webContents.once("did-finish-load", () => {
+    win.webContents.send("user-data", {
+      userId: userId,
+      name: userName,   // ✅ name ng worker
+      email: userEmail, // ✅ email ng worker
+      avatar: userAvatar || ""
+    });
+    win.webContents.send("session-data", {
+      start: sessionStartTime,
+      total: totalWorkedSeconds
+    });
+  });
+});
+
 ipcMain.on("logout", async ()=>{
-  if(sessionId){
+
+  selectedEmployer = null;
+  userName = null;   
+  userEmail = null; 
+  userAvatar = null;
+  saveWorkedTime();
+
+  if(sessionId && token && isTracking){
     try{
       await axios.post(API_URL + "/end-session",
       { session_id: sessionId },
@@ -510,14 +745,31 @@ ipcMain.on("logout", async ()=>{
       console.log("Logout end error:", err.message);
     }
   }
-  sessionId = null;
+
+// KEEP DATA — DO NOT RESET TIMER
+sessionId = null;
+if(sessionStartTime){
+  sessionStartTime = null; // OK dito
+}
+saveLocalTime();
+
   userId = null;
   token = null;
+
   win.loadFile("login.html");
+
+clearInterval(idleChecker);
+  clearInterval(queueRetry);
+  intervals.forEach(clearInterval);
+  intervals = [];
 });
 
 app.on("before-quit", async ()=>{
-  if(sessionId){
+  totalWorkedSeconds = getCurrentTotalSeconds();
+  sessionStartTime = null;
+  saveWorkedTime();
+  saveLocalTime();
+  if(sessionId && token && isTracking){
     try{
       await axios.post(API_URL + "/end-session",
       { session_id: sessionId },
@@ -532,51 +784,120 @@ app.on("before-quit", async ()=>{
 
 });
 
-ipcMain.on("start-tracking", async ()=>{
-  isTracking = true;
 
+
+ipcMain.on("start-tracking", async ()=>{
+
+  const today = new Date().toLocaleDateString('en-CA');
+
+  // 🔥 NEW DAY CHECK
+  if(sessionDate !== today){
+
+    console.log("🌅 New day → reset session");
+
+    if(sessionId){
+      try{
+        await axios.post(
+          API_URL + "/end-session",
+          { session_id: sessionId },
+          { headers:{ Authorization:`Bearer ${token}` } }
+        );
+      }catch(err){
+        console.log("Auto end error:", err.message);
+      }
+    }
+
+    sessionId = null;
+    totalWorkedSeconds = 0;
+    sessionDate = today;
+
+    saveLocalTime();
+  }
+
+  // 🔥 CREATE NEW SESSION
   if(!sessionId){
     try{
       const response = await axios.post(
         API_URL + "/start-session",
-        {},
-        {
-          headers:{ Authorization:`Bearer ${token}` }
-        }
+        { 
+          job_id: selectedEmployer ? selectedEmployer.job_id : 1,
+          employer_id: selectedEmployer ? selectedEmployer.employer_id : null
+        },
+        { headers:{ Authorization:`Bearer ${token}` } }
       );
-      sessionId = response.data.session_id;
-      sessionDate = new Date().toDateString();
+
+      console.log("🔥 START SESSION RESPONSE:", response.data);
+
+      if(!response.data.session_id){
+  console.log("❌ SESSION FAILED:", response.data);
+
+  isTracking = false;
+
+  if(win && !win.isDestroyed()){
+    win.webContents.send("force-stop");
+  }
+
+  return;
+}
+
+sessionId = response.data.session_id;
+      sessionDate = today;
+
+      console.log("✅ NEW SESSION:", sessionId);
+
+      saveLocalTime();
 
     }catch(err){
-      console.log("Start session error:", err.message);
-    }
-  }
-  if(idleTriggered){
-    idleTriggered = false;
-    lastActivity = Date.now();
+      console.log("❌ FULL ERROR:", err.response?.data || err.message);
 
-    if(win){
-      win.webContents.send("status-update","active");
-      win.webContents.send("resume-tracking");
-      win.setAlwaysOnTop(false);
+      isTracking = false;
+
+      if(win && !win.isDestroyed()){
+        win.webContents.send("force-stop");
+      }
+
+      return;
     }
   }
+
+// 🔥 START TIMER ONLY IF SESSION EXISTS
+if(sessionId){
+  isTracking = true;
+}else{
+  return; // 🚫 DO NOT START WITHOUT SESSION
+}
+
+  if(!sessionStartTime){
+  sessionStartTime = Date.now();
+}
+
+  lastActivityTime = Date.now(); // 🔥 RESET IDLE
+idleTriggered = false;         // 🔥 RESET IDLE STATE
+
+  if(win && !win.isDestroyed()){
+    win.webContents.send("status-update","active");
+  }
+
+  
 
 });
 
 ipcMain.on("stop-tracking", async ()=>{
-  isTracking = false;
-  if(!sessionId) return;
-  try{
-    await axios.post(API_URL + "/end-session",
-    { session_id: sessionId },
-    {
-      headers:{ Authorization:`Bearer ${token}` }
-    });
-    sessionId = null;
-  }catch(err){
-    console.log("Pause end error:", err.message);
+
+  // ✅ FIX: I-snapshot at i-save BAGO i-set ang isTracking=false
+  totalWorkedSeconds = getCurrentTotalSeconds();
+  sessionStartTime = null;
+
+  saveWorkedTime();           // ← tatakbo na ngayon dahil isTracking still true
+  saveLocalTime();
+
+  isTracking = false;         // ← dito na lang sa dulo
+
+
+  if(win && !win.isDestroyed()){
+    win.webContents.send("status-update","idle");
   }
+
 });
 
 ipcMain.on("user-activity", ()=>{
@@ -584,12 +905,8 @@ ipcMain.on("user-activity", ()=>{
   lastActivityTime = Date.now(); 
 
   if(idleTriggered){
-    console.log("🔥 USER IS ACTIVE AGAIN");
 
-    idleTriggered = false;
-    isTracking = true;
-
-    if(win){
+    if(win && !win.isDestroyed()){
       win.webContents.send("status-update","active");
       win.webContents.send("resume-tracking");
       win.setAlwaysOnTop(false);
@@ -599,15 +916,56 @@ ipcMain.on("user-activity", ()=>{
 
 ipcMain.on("increment-activity", ()=>{
   const now = Date.now();
-
+   
   if(now - lastActivityTick > 200){
     totalActivity++;
     lastActivityTick = now;
   }
-
+lastActivityTime = Date.now(); // 🔥 THIS FIXES IDLE FALSE TRIGGER
   console.log("🖱️ Total Activity:", totalActivity);
 });
 
+
+function getCurrentTotalSeconds(){
+  let total = totalWorkedSeconds;
+
+  if(isTracking && sessionStartTime){
+    const now = Date.now();
+    const diff = Math.floor((now - sessionStartTime) / 1000);
+    total += diff;
+  }
+
+  return total;
+}
+
+let isSaving = false;
+
+async function saveWorkedTime(){
+
+  if(!sessionId || !token || !isTracking) return;
+  if(isSaving) return; // 🔥 iwas sabay-sabay
+
+  isSaving = true;
+
+  let currentSeconds = getCurrentTotalSeconds();
+
+  try{
+    await axios.post(API_URL + "/update-time", {
+      session_id: sessionId,
+      total_seconds: currentSeconds
+    },{
+      headers:{
+        Authorization:`Bearer ${token}`
+      },
+      timeout: 20000 // 🔥 dagdag time (20 seconds)
+    });
+
+  }catch(err){
+    console.log("❌ Save time error:", err.code || err.message);
+  }
+
+  isSaving = false;
+}
 
 autoUpdater.on('checking-for-update', () => {
   console.log('Checking for update...');
@@ -633,3 +991,4 @@ autoUpdater.on('update-downloaded', () => {
   console.log('Update downloaded. Installing...');
   autoUpdater.quitAndInstall();
 });
+

@@ -16,7 +16,6 @@
     "electron-builder": "^26.8.1"
   },
   "dependencies": {
-    "@nut-tree-fork/nut-js": "^4.2.6",
     "axios": "^1.13.6",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
@@ -24,37 +23,32 @@
     "sharp": "^0.34.5"
   },
   "build": {
-  "appId": "com.vajob.tracker",
-  "productName": "VA Job Tracker",
-
-  "asar": true,
-  "compression": "maximum",
-
-  "files": [
-    "**/*",
-    "!node_modules/*/{test,__tests__,tests,example,examples}",
-    "!**/*.md",
-    "!**/*.map",
-    "!screenshots",
-    "!offline-queue.json"
-  ],
-
-  "win": {
-    "target": "nsis",
-    "icon": "icon.ico"
-  },
-
-  "nsis": {
-    "oneClick": false,
-    "allowToChangeInstallationDirectory": true
-  },
-
-  "publish": [
-    {
-      "provider": "github",
-      "owner": "DevvyDeve",
-      "repo": "tracker-app"
-    }
-  ]
-}
+    "appId": "com.vajob.tracker",
+    "productName": "VA Job Tracker",
+    "asar": true,
+    "compression": "maximum",
+    "files": [
+      "**/*",
+      "!node_modules/*/{test,__tests__,tests,example,examples}",
+      "!**/*.md",
+      "!**/*.map",
+      "!screenshots",
+      "!offline-queue.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DevvyDeve",
+        "repo": "tracker-app"
+      }
+    ]
+  }
 }

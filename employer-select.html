@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Select Employer</title>
+<style>
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Segoe UI', Arial;
+  background: #f4f6f9;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.container {
+  background: white;
+  padding: 35px 30px;
+  border-radius: 16px;
+  width: 380px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  text-align: center;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: 22px;
+  color: #333;
+}
+
+p {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 25px;
+}
+
+.employer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.employer-card {
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: 0.2s;
+  text-align: left;
+}
+
+.employer-card:hover {
+  border-color: #4caf50;
+  background: #f9fff9;
+  transform: scale(1.02);
+}
+
+.employer-card:active {
+  transform: scale(0.98);
+}
+
+.employer-name {
+  font-weight: bold;
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.job-title {
+  font-size: 13px;
+  color: #888;
+}
+
+#loading {
+  color: #4caf50;
+  font-size: 14px;
+  margin-top: 20px;
+}
+
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h2>Select Employer</h2>
+  <p>Piliin kung kanino ka magtatrabaho ngayon</p>
+
+  <div class="employer-list" id="employerList">
+    <p id="loading">Loading employers...</p>
+  </div>
+</div>
+
+<script>
+const ipc = window.api;
+
+// 🔥 Receive employer list mula sa main.js
+ipc.on("employer-list", (event, employers) => {
+
+  const list = document.getElementById("employerList");
+  list.innerHTML = ""; // clear loading text
+
+  employers.forEach(employer => {
+
+    const card = document.createElement("div");
+    card.className = "employer-card";
+
+    card.innerHTML = `
+      <div class="employer-name">🏢 ${employer.employer_name}</div>
+      <div class="job-title">💼 ${employer.job_title}</div>
+    `;
+
+    // 🔥 Kapag nag-click ang worker sa employer card
+    card.addEventListener("click", () => {
+
+      // Disable lahat ng cards para hindi maka-double click
+      document.querySelectorAll(".employer-card").forEach(c => {
+        c.style.pointerEvents = "none";
+        c.style.opacity = "0.5";
+      });
+
+      card.style.opacity = "1";
+      card.style.borderColor = "#4caf50";
+      card.style.background = "#f9fff9";
+
+      // 🔥 I-send ang napiling employer sa main.js
+      ipc.send("select-employer", employer);
+
+    });
+
+    list.appendChild(card);
+
+  });
+
+});
+</script>
+</body>
+</html>

@@ -260,7 +260,7 @@ if(sessionId){
 }
 
 }, 3000);
-
+intervals.push(idleChecker);
 
 intervals.push(setInterval(()=>{
 if(!idleTriggered && isTracking){
@@ -347,7 +347,7 @@ let queueRetry = setInterval(async () => {
 fs.writeFileSync(queueFile, JSON.stringify(newQueue, null, 2));
 
 }, 15000);
-
+intervals.push(queueRetry);
 
 });
 
@@ -764,8 +764,6 @@ saveLocalTime();
 
   win.loadFile("login.html");
 
-clearInterval(idleChecker);
-  clearInterval(queueRetry);
   intervals.forEach(clearInterval);
   intervals = [];
 });
@@ -967,8 +965,20 @@ async function saveWorkedTime(){
     });
 
   }catch(err){
-    console.log("❌ Save time error:", err.code || err.message);
+  console.log("❌ Save time error:", err.code || err.message);
+  
+  // 🔥 DAGDAG
+  if(err.response && err.response.status === 401){
+    console.log("❌ TOKEN EXPIRED sa saveWorkedTime");
+    sessionId = null;
+    userId = null;
+    token = null;
+    isTracking = false;
+    if(win && !win.isDestroyed()){
+      win.loadFile("login.html");
+    }
   }
+}
 
   isSaving = false;
 }

@@ -641,6 +641,12 @@ ipcMain.on("login-success", async (event, data) => {
       console.log("❌ No active employers found");
       if(win && !win.isDestroyed()){
         win.loadFile("login.html");
+        win.webContents.once("did-finish-load", () => {
+          win.webContents.executeJavaScript(`
+            document.getElementById("status").innerText = 
+            "❌ No active employer found. Please contact your employer.";
+          `);
+        });
       }
       return;
     }
